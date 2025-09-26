@@ -133,12 +133,8 @@ function createRouteDot(player, pt){
     field.appendChild(dot);
     pt.dotEl=dot;
 
-    // --- Touch ---
     let touchStartTime=0, isDragging=false;
-    dot.addEventListener("touchstart", e=>{
-        e.stopPropagation();
-        touchStartTime=Date.now();
-    });
+    dot.addEventListener("touchstart", e=>{ e.stopPropagation(); touchStartTime=Date.now(); });
     dot.addEventListener("touchmove", e=>{
         if(!touchStartTime) return;
         isDragging=true;
@@ -150,18 +146,10 @@ function createRouteDot(player, pt){
         dot.style.top=pt.y+"px";
         redrawAllRoutes();
     });
-    dot.addEventListener("touchend", e=>{
-        touchStartTime=0;
-        isDragging=false;
-    });
+    dot.addEventListener("touchend", e=>{ touchStartTime=0; isDragging=false; });
 
-    // --- Mouse ---
     let mouseStartTime=0;
-    dot.addEventListener("mousedown", e=>{
-        e.stopPropagation();
-        mouseStartTime=Date.now();
-        isDragging=true;
-    });
+    dot.addEventListener("mousedown", e=>{ e.stopPropagation(); mouseStartTime=Date.now(); isDragging=true; });
     dot.addEventListener("mousemove", e=>{
         if(!isDragging) return;
         const rect=field.getBoundingClientRect();
@@ -171,9 +159,7 @@ function createRouteDot(player, pt){
         dot.style.top=pt.y+"px";
         redrawAllRoutes();
     });
-    dot.addEventListener("mouseup", e=>{
-        isDragging=false;
-    });
+    dot.addEventListener("mouseup", e=>{ isDragging=false; });
 }
 
 // --- Player ---
@@ -185,11 +171,7 @@ function selectPlayer(p){
 
 function makePlayerDraggable(p){
     let touchStartTime=0, isDragging=false;
-    p.addEventListener("touchstart",e=>{
-        e.stopPropagation();
-        selectPlayer(p);
-        touchStartTime=Date.now();
-    });
+    p.addEventListener("touchstart",e=>{ e.stopPropagation(); selectPlayer(p); touchStartTime=Date.now(); });
     p.addEventListener("touchmove",e=>{
         if(!touchStartTime) return;
         if(Date.now()-touchStartTime>400){
@@ -202,19 +184,10 @@ function makePlayerDraggable(p){
             touchStartTime=0;
         }
     });
-    p.addEventListener("touchend",e=>{
-        if(!isDragging) selectPlayer(p);
-        isDragging=false;
-        dragTarget=null;
-        touchStartTime=0;
-    });
+    p.addEventListener("touchend",e=>{ if(!isDragging) selectPlayer(p); isDragging=false; dragTarget=null; touchStartTime=0; });
 
     let mouseStartTime=0;
-    p.addEventListener("mousedown",e=>{
-        e.stopPropagation();
-        selectPlayer(p);
-        mouseStartTime=Date.now();
-    });
+    p.addEventListener("mousedown",e=>{ e.stopPropagation(); selectPlayer(p); mouseStartTime=Date.now(); });
     p.addEventListener("mousemove",e=>{
         if(!mouseStartTime) return;
         if(Date.now()-mouseStartTime>400){
@@ -226,12 +199,7 @@ function makePlayerDraggable(p){
             mouseStartTime=0;
         }
     });
-    p.addEventListener("mouseup",e=>{
-        if(!isDragging) selectPlayer(p);
-        isDragging=false;
-        dragTarget=null;
-        mouseStartTime=0;
-    });
+    p.addEventListener("mouseup",e=>{ if(!isDragging) selectPlayer(p); isDragging=false; dragTarget=null; mouseStartTime=0; });
 }
 
 function addPlayer(){
@@ -257,7 +225,6 @@ field.addEventListener("touchmove",e=>{
     redrawAllRoutes();
 });
 field.addEventListener("touchend",()=>dragTarget=null);
-
 field.addEventListener("mousemove",e=>{
     if(!dragTarget) return;
     const rect=field.getBoundingClientRect();
@@ -411,6 +378,7 @@ function toggleBall(){
 
 function startAnimation(){ alert("Animation placeholder"); }
 
+// --- Export PDF ---
 async function exportPDF(){
     const sel = document.getElementById('savedPlays');
     const prevSel = sel.value;
@@ -426,8 +394,8 @@ async function exportPDF(){
         const name = playNames[i];
         sel.value = name;
         loadPlay();
-
         await new Promise(res => setTimeout(res, 200));
+
         const canvas = await html2canvas(field, {scale:2, useCORS:true, allowTaint:true});
         const imgData = canvas.toDataURL('image/png');
 
@@ -435,6 +403,7 @@ async function exportPDF(){
         const pdfH = pdf.internal.pageSize.getHeight();
         const margin = 20;
 
+        // Fit captured image into PDF while preserving aspect ratio
         let imgW = pdfW - margin*2;
         let imgH = canvas.height * (imgW / canvas.width);
         if(imgH > pdfH - 80){
@@ -456,14 +425,17 @@ async function exportPDF(){
         sel.value = prevSel;
         loadPlay();
     } else {
-        players.forEach(p=>p.remove()); players=[];
-        const existingDots=document.querySelectorAll('.route-dot'); existingDots.forEach(d=>d.remove());
+        players.forEach(p=>p.remove()); 
+        players=[];
+        const existingDots=document.querySelectorAll('.route-dot'); 
+        existingDots.forEach(d=>d.remove());
         redrawAllRoutes();
     }
 
     pdf.save("lacrosse_plays.pdf");
 }
 
+// --- Field Mode ---
 function toggleFieldMode(){ 
     const mode=document.getElementById("fieldMode").value; 
     if(mode==="half"){ 
@@ -477,6 +449,7 @@ function toggleFieldMode(){
     redrawAllRoutes(); 
 }
 
+// --- Init ---
 if(localStorage.getItem('lacrossePlays')){
     plays = JSON.parse(localStorage.getItem('lacrossePlays'));
     updatePlayDropdown();
