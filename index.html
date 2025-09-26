@@ -225,6 +225,7 @@ field.addEventListener("touchmove",e=>{
     redrawAllRoutes();
 });
 field.addEventListener("touchend",()=>dragTarget=null);
+
 field.addEventListener("mousemove",e=>{
     if(!dragTarget) return;
     const rect=field.getBoundingClientRect();
@@ -285,10 +286,8 @@ function redrawAllRoutes(){
 function savePlay(){ 
     const name=document.getElementById("playName").value; 
     if(!name)return alert("Enter play name"); 
-    plays[name]={
-        fieldMode: document.getElementById("fieldMode").value,
-        players: players.map(p=>({left:p.style.left,top:p.style.top,role:p.textContent,route:p.route.map(r=>({x:r.x,y:r.y,type:r.type,flipped:r.flipped})),hasBall:p.hasBall}))
-    };
+    const mode=document.getElementById("fieldMode").value;
+    plays[name]=players.map(p=>({left:p.style.left,top:p.style.top,role:p.textContent,route:p.route.map(r=>({x:r.x,y:r.y,type:r.type,flipped:r.flipped})),hasBall:p.hasBall,fieldMode:mode})); 
     localStorage.setItem('lacrossePlays',JSON.stringify(plays));
     updatePlayDropdown(); alert("Play saved"); 
 }
@@ -297,18 +296,16 @@ function loadPlay(){
     const sel=document.getElementById("savedPlays"); 
     const name=sel.value; 
     if(!plays[name]) return; 
-
-    const savedPlay = plays[name];
-    const mode = savedPlay.fieldMode || 'full';
-    document.getElementById("fieldMode").value = mode;
-    toggleFieldMode();
-
     players.forEach(p=>p.remove()); 
     players=[]; 
     const existingDots=document.querySelectorAll('.route-dot'); 
     existingDots.forEach(d=>d.remove());
 
-    savedPlay.players.forEach(d=>{ 
+    const mode = plays[name].fieldMode || "full";
+    document.getElementById("fieldMode").value = mode;
+    toggleFieldMode();
+
+    plays[name].forEach(d=>{ 
         const p=document.createElement("div"); 
         p.classList.add("player"); 
         p.textContent=d.role; 
@@ -378,57 +375,58 @@ function toggleBall(){
 
 function startAnimation(){ alert("Animation placeholder"); }
 
-// --- Export PDF ---
-async function exportPDF(){
+// --- Export PDF (updated) ---
+async function exportPDF() {
     const sel = document.getElementById('savedPlays');
     const prevSel = sel.value;
     const playNames = Object.keys(plays);
-    if(playNames.length === 0){
+
+    if (playNames.length === 0) {
         alert("No plays saved to export");
         return;
     }
 
-    const pdf = new jspdf.jsPDF({orientation:'landscape',unit:'px'});
+    const pdf = new jspdf.jsPDF({ orientation: 'landscape', unit: 'px' });
+    const pdfW = pdf.internal.pageSize.getWidth();
+    const pdfH = pdf.internal.pageSize.getHeight();
+    const margin = 20;
 
-    for(let i=0;i<playNames.length;i++){
+    for (let i = 0; i < playNames.length; i++) {
         const name = playNames[i];
+
         sel.value = name;
         loadPlay();
+
         await new Promise(res => setTimeout(res, 200));
 
-        const canvas = await html2canvas(field, {scale:2, useCORS:true, allowTaint:true});
+        const canvas = await html2canvas(field, { scale: 2, useCORS: true });
         const imgData = canvas.toDataURL('image/png');
 
-        const pdfW = pdf.internal.pageSize.getWidth();
-        const pdfH = pdf.internal.pageSize.getHeight();
-        const margin = 20;
-
-        // Fit captured image into PDF while preserving aspect ratio
-        let imgW = pdfW - margin*2;
+        let imgW = pdfW - margin * 2;
         let imgH = canvas.height * (imgW / canvas.width);
-        if(imgH > pdfH - 80){
+        if (imgH > pdfH - 80) {
             imgH = pdfH - 80;
             imgW = canvas.width * (imgH / canvas.height);
         }
         const x = (pdfW - imgW) / 2;
         const y = 20;
 
-        if(i > 0) pdf.addPage();
+        if (i > 0) pdf.addPage();
         pdf.addImage(imgData, 'PNG', x, y, imgW, imgH);
 
         pdf.setFontSize(20);
-        pdf.setTextColor(0,0,0);
-        pdf.text(name, pdfW/2, y + imgH + 40, {align:'center'});
+        pdf.setTextColor(0, 0, 0);
+        pdf.text(name, pdfW / 2, y + imgH + 40, { align: 'center' });
     }
 
-    if(prevSel){
+    if (prevSel) {
         sel.value = prevSel;
         loadPlay();
     } else {
-        players.forEach(p=>p.remove()); 
-        players=[];
-        const existingDots=document.querySelectorAll('.route-dot'); 
-        existingDots.forEach(d=>d.remove());
+        players.forEach(p => p.remove());
+        players = [];
+        const existingDots = document.querySelectorAll('.route-dot');
+        existingDots.forEach(d => d.remove());
         redrawAllRoutes();
     }
 
