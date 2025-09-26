@@ -286,8 +286,7 @@ function redrawAllRoutes(){
 function savePlay(){ 
     const name=document.getElementById("playName").value; 
     if(!name)return alert("Enter play name"); 
-    const mode=document.getElementById("fieldMode").value;
-    plays[name]=players.map(p=>({left:p.style.left,top:p.style.top,role:p.textContent,route:p.route.map(r=>({x:r.x,y:r.y,type:r.type,flipped:r.flipped})),hasBall:p.hasBall,fieldMode:mode})); 
+    plays[name]=players.map(p=>({left:p.style.left,top:p.style.top,role:p.textContent,route:p.route.map(r=>({x:r.x,y:r.y,type:r.type,flipped:r.flipped})),hasBall:p.hasBall})); 
     localStorage.setItem('lacrossePlays',JSON.stringify(plays));
     updatePlayDropdown(); alert("Play saved"); 
 }
@@ -300,10 +299,6 @@ function loadPlay(){
     players=[]; 
     const existingDots=document.querySelectorAll('.route-dot'); 
     existingDots.forEach(d=>d.remove());
-
-    const mode = plays[name].fieldMode || "full";
-    document.getElementById("fieldMode").value = mode;
-    toggleFieldMode();
 
     plays[name].forEach(d=>{ 
         const p=document.createElement("div"); 
@@ -375,7 +370,7 @@ function toggleBall(){
 
 function startAnimation(){ alert("Animation placeholder"); }
 
-// --- Export PDF (updated) ---
+// --- UPDATED exportPDF ONLY ---
 async function exportPDF() {
     const sel = document.getElementById('savedPlays');
     const prevSel = sel.value;
