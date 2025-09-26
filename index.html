@@ -402,17 +402,68 @@ function toggleBall(){
 
 function startAnimation(){ alert("Animation placeholder"); }
 
-function exportPDF(){
-    const name=document.getElementById("playName").value;
-    html2canvas(field).then(canvas=>{
-        const imgData=canvas.toDataURL('image/png');
-        const pdf=new jspdf.jsPDF({orientation:'landscape',unit:'px',format:[field.clientWidth,field.clientHeight+30]});
-        pdf.addImage(imgData,'PNG',0,0,field.clientWidth,field.clientHeight);
+// --- UPDATED exportPDF: exports ALL saved plays, fits each image to page, avoids half-field cutoff ---
+async function exportPDF(){
+    const sel = document.getElementById('savedPlays');
+    const prevSel = sel.value;
+    const playNames = Object.keys(plays);
+    if(playNames.length === 0){
+        alert("No plays saved to export");
+        return;
+    }
+
+    // Create PDF
+    const pdf = new jspdf.jsPDF({orientation:'landscape',unit:'px'});
+
+    for(let i=0;i<playNames.length;i++){
+        const name = playNames[i];
+
+        // render the play onto the field by setting the dropdown and calling loadPlay
+        sel.value = name;
+        loadPlay();
+
+        // small delay so DOM updates finish rendering before capture
+        await new Promise(res => setTimeout(res, 200));
+
+        // capture the full #field at higher resolution to avoid cropping
+        const canvas = await html2canvas(field, {scale:2, useCORS:true, allowTaint:true});
+        const imgData = canvas.toDataURL('image/png');
+
+        const pdfW = pdf.internal.pageSize.getWidth();
+        const pdfH = pdf.internal.pageSize.getHeight();
+        const margin = 20;
+
+        // Fit captured image into PDF page while preserving aspect ratio
+        let imgW = pdfW - margin*2;
+        let imgH = canvas.height * (imgW / canvas.width);
+        if(imgH > pdfH - 80){
+            imgH = pdfH - 80;
+            imgW = canvas.width * (imgH / canvas.height);
+        }
+        const x = (pdfW - imgW) / 2;
+        const y = 20;
+
+        if(i > 0) pdf.addPage();
+        pdf.addImage(imgData, 'PNG', x, y, imgW, imgH);
+
+        // Play name centered under the field image
         pdf.setFontSize(16);
         pdf.setTextColor(255,255,255);
-        pdf.text(name,field.clientWidth/2,field.clientHeight+20,{align:'center'});
-        pdf.save("lacrosse_play.pdf");
-    });
+        pdf.text(name, pdfW/2, y + imgH + 24, {align:'center'});
+    }
+
+    // restore previously-selected play (or clear if none)
+    if(prevSel){
+        sel.value = prevSel;
+        loadPlay();
+    } else {
+        // clear field and re-draw field lines
+        players.forEach(p=>p.remove()); players=[];
+        const existingDots=document.querySelectorAll('.route-dot'); existingDots.forEach(d=>d.remove());
+        redrawAllRoutes();
+    }
+
+    pdf.save("lacrosse_plays.pdf");
 }
 
 function toggleFieldMode(){ 
