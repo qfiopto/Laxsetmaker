@@ -449,7 +449,7 @@ async function exportPDF(){
         // Play name centered under the field image
         pdf.setFontSize(16);
         pdf.setTextColor(255,255,255);
-        pdf.text(name, pdfW/2, y + imgH + 24, {align:'center'});
+        pdf.text(name, pdfW/2, y + imgH + 40, {align:'center'});
     }
 
     // restore previously-selected play (or clear if none)
