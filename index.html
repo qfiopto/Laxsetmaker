@@ -63,7 +63,377 @@ canvas { position:absolute; top:0; left:0; pointer-events:none; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script>
-// JavaScript code goes here (the full code from the last working version)
+const field=document.getElementById("field");
+const linesCanvas=document.getElementById("linesCanvas");
+const linesCtx=linesCanvas.getContext("2d");
+const routeCanvas=document.getElementById("routeCanvas");
+const ctx=routeCanvas.getContext("2d");
+
+let players=[];
+let selectedPlayer=null;
+let dragTarget=null;
+let dragOffsetX=0, dragOffsetY=0;
+let plays={};
+
+// --- Field ---
+function drawFieldLines(){
+    linesCtx.clearRect(0,0,linesCanvas.width,linesCanvas.height);
+    linesCtx.strokeStyle="white"; linesCtx.lineWidth=3;
+    const w=linesCanvas.width,h=linesCanvas.height;
+    const half=document.getElementById("fieldMode").value==="half";
+
+    linesCtx.strokeRect(0,0,w,h);
+    if(!half){ linesCtx.beginPath(); linesCtx.moveTo(w/2,0); linesCtx.lineTo(w/2,h); linesCtx.stroke(); }
+
+    const boxW=200,boxH=h*0.6;
+    const extend=25;
+    if(half) linesCtx.strokeRect(0,(h-boxH)/2,boxW+extend,boxH);
+    else { linesCtx.strokeRect(0,(h-boxH)/2,boxW+extend,boxH); linesCtx.strokeRect(w-boxW-extend,(h-boxH)/2,boxW+extend,boxH); }
+
+    drawGoal(100,h/2,30,true);
+    if(!half) drawGoal(w-100,h/2,30,false);
+}
+
+function drawGoal(x,y,r,leftSide){
+    linesCtx.beginPath();
+    linesCtx.arc(x,y,r,0,2*Math.PI);
+    linesCtx.stroke();
+    const triR=r*0.5;
+    const h=triR*Math.sqrt(3)/2;
+    linesCtx.beginPath();
+    if(leftSide){
+        linesCtx.moveTo(x+h,y-triR);
+        linesCtx.lineTo(x+h,y+triR);
+        linesCtx.lineTo(x-h,y);
+    } else {
+        linesCtx.moveTo(x-h,y-triR);
+        linesCtx.lineTo(x-h,y+triR);
+        linesCtx.lineTo(x+h,y);
+    }
+    linesCtx.closePath(); linesCtx.stroke();
+}
+
+// --- Routes ---
+function createRoutePoint(player,type){
+    const x=parseFloat(player.style.left);
+    const y=parseFloat(player.style.top);
+    const distance=80;
+    let angle=0;
+    if(type==="high") angle=Math.PI/4;
+    else if(type==="slight") angle=Math.PI/12;
+    else angle=-Math.PI/6;
+    return {x:x+distance*Math.cos(angle),y:y+distance*Math.sin(angle),type:type,flipped:false,dotEl:null};
+}
+
+function createRouteDot(player, pt){
+    const dot=document.createElement("div");
+    dot.classList.add("route-dot");
+    dot.style.left=pt.x+"px";
+    dot.style.top=pt.y+"px";
+    field.appendChild(dot);
+    pt.dotEl=dot;
+
+    // --- Touch ---
+    let touchStartTime=0, isDragging=false;
+    dot.addEventListener("touchstart", e=>{
+        e.stopPropagation();
+        touchStartTime=Date.now();
+    });
+    dot.addEventListener("touchmove", e=>{
+        if(!touchStartTime) return;
+        isDragging=true;
+        const touch=e.touches[0];
+        const rect=field.getBoundingClientRect();
+        pt.x=touch.clientX-rect.left;
+        pt.y=touch.clientY-rect.top;
+        dot.style.left=pt.x+"px";
+        dot.style.top=pt.y+"px";
+        redrawAllRoutes();
+    });
+    dot.addEventListener("touchend", e=>{
+        touchStartTime=0;
+        isDragging=false;
+    });
+
+    // --- Mouse ---
+    let mouseStartTime=0;
+    dot.addEventListener("mousedown", e=>{
+        e.stopPropagation();
+        mouseStartTime=Date.now();
+        isDragging=true;
+    });
+    dot.addEventListener("mousemove", e=>{
+        if(!isDragging) return;
+        const rect=field.getBoundingClientRect();
+        pt.x=e.clientX-rect.left;
+        pt.y=e.clientY-rect.top;
+        dot.style.left=pt.x+"px";
+        dot.style.top=pt.y+"px";
+        redrawAllRoutes();
+    });
+    dot.addEventListener("mouseup", e=>{
+        isDragging=false;
+    });
+}
+
+// --- Player ---
+function selectPlayer(p){
+    players.forEach(pl=>pl.style.boxShadow="");
+    selectedPlayer=p;
+    p.style.boxShadow="0 0 10px 3px #00f";
+}
+
+function makePlayerDraggable(p){
+    let touchStartTime=0, isDragging=false;
+    p.addEventListener("touchstart",e=>{
+        e.stopPropagation();
+        selectPlayer(p);
+        touchStartTime=Date.now();
+    });
+    p.addEventListener("touchmove",e=>{
+        if(!touchStartTime) return;
+        if(Date.now()-touchStartTime>400){
+            isDragging=true;
+            dragTarget=p;
+            const touch=e.touches[0];
+            const rect=field.getBoundingClientRect();
+            dragOffsetX=touch.clientX-rect.left-parseFloat(p.style.left);
+            dragOffsetY=touch.clientY-rect.top-parseFloat(p.style.top);
+            touchStartTime=0;
+        }
+    });
+    p.addEventListener("touchend",e=>{
+        if(!isDragging) selectPlayer(p);
+        isDragging=false;
+        dragTarget=null;
+        touchStartTime=0;
+    });
+
+    let mouseStartTime=0;
+    p.addEventListener("mousedown",e=>{
+        e.stopPropagation();
+        selectPlayer(p);
+        mouseStartTime=Date.now();
+    });
+    p.addEventListener("mousemove",e=>{
+        if(!mouseStartTime) return;
+        if(Date.now()-mouseStartTime>400){
+            isDragging=true;
+            dragTarget=p;
+            const rect=field.getBoundingClientRect();
+            dragOffsetX=e.clientX-rect.left-parseFloat(p.style.left);
+            dragOffsetY=e.clientY-rect.top-parseFloat(p.style.top);
+            mouseStartTime=0;
+        }
+    });
+    p.addEventListener("mouseup",e=>{
+        if(!isDragging) selectPlayer(p);
+        isDragging=false;
+        dragTarget=null;
+        mouseStartTime=0;
+    });
+}
+
+function addPlayer(){
+    const role=document.getElementById("roleSelect").value;
+    const p=document.createElement("div");
+    p.classList.add("player");
+    p.textContent=role;
+    p.style.left=`${Math.random()*(field.clientWidth-100)+50}px`;
+    p.style.top=`${Math.random()*(field.clientHeight-100)+50}px`;
+    p.route=[]; p.hasBall=false;
+    makePlayerDraggable(p);
+    field.appendChild(p);
+    players.push(p);
+}
+
+// --- Dragging ---
+field.addEventListener("touchmove",e=>{
+    if(!dragTarget) return;
+    const touch=e.touches[0];
+    const rect=field.getBoundingClientRect();
+    dragTarget.style.left=(touch.clientX-rect.left-dragOffsetX)+"px";
+    dragTarget.style.top=(touch.clientY-rect.top-dragOffsetY)+"px";
+    redrawAllRoutes();
+});
+field.addEventListener("touchend",()=>dragTarget=null);
+
+field.addEventListener("mousemove",e=>{
+    if(!dragTarget) return;
+    const rect=field.getBoundingClientRect();
+    dragTarget.style.left=(e.clientX-rect.left-dragOffsetX)+"px";
+    dragTarget.style.top=(e.clientY-rect.top-dragOffsetY)+"px";
+    redrawAllRoutes();
+});
+field.addEventListener("mouseup",()=>dragTarget=null);
+
+// --- Route functions ---
+function addRoute(){ 
+    if(!selectedPlayer) return; 
+    const type=document.getElementById("routeTypeSelect").value; 
+    const pt=createRoutePoint(selectedPlayer,type);
+    selectedPlayer.route.push(pt);
+    createRouteDot(selectedPlayer, pt);
+    redrawAllRoutes(); 
+}
+
+function toggleCurveDirection(){
+    if(!selectedPlayer || !selectedPlayer.route.length) return;
+    const last=selectedPlayer.route[selectedPlayer.route.length-1];
+    last.flipped=!last.flipped;
+    redrawAllRoutes();
+}
+
+// --- Draw ---
+function redrawAllRoutes(){
+    ctx.clearRect(0,0,routeCanvas.width,routeCanvas.height);
+    players.forEach(p=>{
+        if(!p.route.length) return;
+        let startX=parseFloat(p.style.left);
+        let startY=parseFloat(p.style.top);
+        ctx.beginPath();
+        ctx.moveTo(startX,startY);
+        p.route.forEach(pt=>{
+            let mx=(startX+pt.x)/2;
+            let my=(startY+pt.y)/2;
+            let adjust=0;
+            if(pt.type==="high") adjust=pt.flipped?30:-30;
+            else if(pt.type==="slight") adjust=pt.flipped?10:-10;
+            else adjust=pt.flipped?-20:20;
+            const dx=mx-startX, dy=my-startY;
+            const rX=dx;
+            const rY=dy+adjust;
+            ctx.quadraticCurveTo(startX+rX,startY+rY,pt.x,pt.y);
+            startX=pt.x; startY=pt.y;
+            if(pt.dotEl){
+                pt.dotEl.style.left=pt.x+"px";
+                pt.dotEl.style.top=pt.y+"px";
+            }
+        });
+        ctx.strokeStyle="white"; ctx.lineWidth=2; ctx.stroke();
+    });
+}
+
+// --- Buttons ---
+function savePlay(){ 
+    const name=document.getElementById("playName").value; 
+    if(!name)return alert("Enter play name"); 
+    plays[name]=players.map(p=>({left:p.style.left,top:p.style.top,role:p.textContent,route:p.route.map(r=>({x:r.x,y:r.y,type:r.type,flipped:r.flipped})),hasBall:p.hasBall})); 
+    localStorage.setItem('lacrossePlays',JSON.stringify(plays));
+    updatePlayDropdown(); alert("Play saved"); 
+}
+
+function loadPlay(){ 
+    const sel=document.getElementById("savedPlays"); 
+    const name=sel.value; 
+    if(!plays[name]) return; 
+    players.forEach(p=>p.remove()); 
+    players=[]; 
+    const existingDots=document.querySelectorAll('.route-dot'); 
+    existingDots.forEach(d=>d.remove());
+
+    plays[name].forEach(d=>{ 
+        const p=document.createElement("div"); 
+        p.classList.add("player"); 
+        p.textContent=d.role; 
+        p.style.left=d.left; 
+        p.style.top=d.top; 
+        p.route=[]; 
+        p.hasBall=d.hasBall; 
+        makePlayerDraggable(p);
+        field.appendChild(p); 
+        players.push(p); 
+
+        if(d.route) d.route.forEach(r=>{
+            const routePoint = {x:r.x,y:r.y,type:r.type,flipped:r.flipped,dotEl:null};
+            createRouteDot(p, routePoint); 
+            p.route.push(routePoint);
+        });
+    }); 
+
+    redrawAllRoutes(); 
+}
+
+function updatePlayDropdown(){ 
+    const sel=document.getElementById("savedPlays"); sel.innerHTML=""; 
+    Object.keys(plays).forEach(name=>{ 
+        const opt=document.createElement("option"); 
+        opt.value=name; opt.textContent=name; sel.appendChild(opt); 
+    }); 
+}
+
+function deletePlay(){ 
+    const sel=document.getElementById("savedPlays"); 
+    if(!sel.value) return; 
+    delete plays[sel.value]; 
+    localStorage.setItem('lacrossePlays',JSON.stringify(plays));
+    updatePlayDropdown(); 
+}
+
+function resetPlay(){ 
+    if(!selectedPlayer) return; 
+    selectedPlayer.route.forEach(pt=>{ if(pt.dotEl) pt.dotEl.remove(); });
+    selectedPlayer.route=[]; 
+    redrawAllRoutes(); 
+}
+
+function deleteSelectedPlayer(){ 
+    if(selectedPlayer){ 
+        selectedPlayer.route.forEach(pt=>{ if(pt.dotEl) pt.dotEl.remove(); });
+        selectedPlayer.remove(); 
+        players=players.filter(p=>p!==selectedPlayer); 
+        selectedPlayer=null; 
+    } 
+}
+
+function toggleBall(){ 
+    if(!selectedPlayer) return; 
+    if(selectedPlayer.hasBall){ selectedPlayer.ballEl.remove(); selectedPlayer.hasBall=false; } 
+    else { 
+        const ball=document.createElement("div"); 
+        ball.classList.add("ball"); 
+        ball.style.left=selectedPlayer.style.left; 
+        ball.style.top=selectedPlayer.style.top; 
+        field.appendChild(ball); 
+        selectedPlayer.hasBall=true; 
+        selectedPlayer.ballEl=ball; 
+    } 
+}
+
+function startAnimation(){ alert("Animation placeholder"); }
+
+function exportPDF(){
+    const name=document.getElementById("playName").value;
+    html2canvas(field).then(canvas=>{
+        const imgData=canvas.toDataURL('image/png');
+        const pdf=new jspdf.jsPDF({orientation:'landscape',unit:'px',format:[field.clientWidth,field.clientHeight+30]});
+        pdf.addImage(imgData,'PNG',0,0,field.clientWidth,field.clientHeight);
+        pdf.setFontSize(16);
+        pdf.setTextColor(255,255,255);
+        pdf.text(name,field.clientWidth/2,field.clientHeight+20,{align:'center'});
+        pdf.save("lacrosse_play.pdf");
+    });
+}
+
+function toggleFieldMode(){ 
+    const mode=document.getElementById("fieldMode").value; 
+    if(mode==="half"){ 
+        field.style.width="400px"; 
+        linesCanvas.width=400; routeCanvas.width=400; 
+    } else { 
+        field.style.width="800px"; 
+        linesCanvas.width=800; routeCanvas.width=800; 
+    } 
+    drawFieldLines(); 
+    redrawAllRoutes(); 
+}
+
+if(localStorage.getItem('lacrossePlays')){
+    plays = JSON.parse(localStorage.getItem('lacrossePlays'));
+    updatePlayDropdown();
+}
+
+drawFieldLines();
 </script>
 </body>
 </html>
