@@ -7,7 +7,7 @@
 body { margin:0; background:#2b2b2b; color:white; font-family:Arial,sans-serif; display:flex; flex-direction:column; align-items:center;}
 #field { background:green; width:800px; height:500px; border:5px solid white; position:relative; overflow:hidden;}
 .player { width:25px; height:25px; border-radius:50%; background:yellow; border:2px solid black; color:black; position:absolute; transform:translate(-50%,-50%); display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:bold; user-select:none; z-index:10; }
-.ball { width:10px; height:10px; border-radius:50%; background:orange; position:absolute; transform:translate(-50%, -50%); pointer-events:none; z-index:12;}
+.ball { width:10px; height:10px; border-radius:50%; background:white; position:absolute; transform:translate(-50%, -50%); pointer-events:none; z-index:12;}
 .route-dot { width:12px; height:12px; border-radius:50%; background:orange; position:absolute; transform:translate(-50%,-50%); z-index:11; }
 #controls { margin:10px; }
 button, select, input { margin:2px; padding:6px 12px; border:none; border-radius:5px; cursor:pointer; background:#444; color:white;}
@@ -55,6 +55,10 @@ canvas { position:absolute; top:0; left:0; pointer-events:none; }
 <option value="full">Full Field</option>
 <option value="half">Half Field</option>
 </select>
+<br>
+<button onclick="downloadPlays()">Download Plays</button>
+<button onclick="loadPlaysFromFile()">Load Plays from File</button>
+<input type="file" id="playFileInput" style="display:none" accept=".json">
 </div>
 <div id="field">
 <canvas id="linesCanvas" width="800" height="500"></canvas>
@@ -203,7 +207,6 @@ function makePlayerDraggable(p){
     p.addEventListener("mouseup",e=>{ if(!isDragging) selectPlayer(p); isDragging=false; dragTarget=null; mouseStartTime=0; });
 }
 
-// --- Add Player ---
 function addPlayer(){
     const role=document.getElementById("roleSelect").value;
     const p=document.createElement("div");
@@ -215,7 +218,6 @@ function addPlayer(){
     makePlayerDraggable(p);
     field.appendChild(p);
     players.push(p);
-    storeOriginalPositions();
 }
 
 // --- Dragging ---
@@ -245,7 +247,6 @@ function addRoute(){
     const pt=createRoutePoint(selectedPlayer,type);
     selectedPlayer.route.push(pt);
     createRouteDot(selectedPlayer, pt);
-    storeOriginalPositions();
     redrawAllRoutes(); 
 }
 
@@ -297,7 +298,13 @@ function redrawAllRoutes(){
 function savePlay(){ 
     const name=document.getElementById("playName").value; 
     if(!name)return alert("Enter play name"); 
-    plays[name]=players.map(p=>({left:p.style.left,top:p.style.top,role:p.textContent,route:p.route.map(r=>({x:r.x,y:r.y,type:r.type,flipped:r.flipped})),hasBall:p.hasBall})); 
+    plays[name]=players.map(p=>({
+        left:p.style.left,
+        top:p.style.top,
+        role:p.textContent,
+        route:p.route.map(r=>({x:r.x,y:r.y,type:r.type,flipped:r.flipped})),
+        hasBall:p.hasBall
+    })); 
     localStorage.setItem('lacrossePlays',JSON.stringify(plays));
     updatePlayDropdown(); alert("Play saved"); 
 }
@@ -311,6 +318,10 @@ function loadPlay(){
     const existingDots=document.querySelectorAll('.route-dot'); 
     existingDots.forEach(d=>d.remove());
 
+    // remove existing balls
+    const existingBalls = document.querySelectorAll('.ball');
+    existingBalls.forEach(b=>b.remove());
+
     plays[name].forEach(d=>{ 
         const p=document.createElement("div"); 
         p.classList.add("player"); 
@@ -318,7 +329,7 @@ function loadPlay(){
         p.style.left=d.left; 
         p.style.top=d.top; 
         p.route=[]; 
-        p.hasBall=d.hasBall; 
+        p.hasBall=false; 
         makePlayerDraggable(p);
         field.appendChild(p); 
         players.push(p); 
@@ -328,10 +339,27 @@ function loadPlay(){
             createRouteDot(p, routePoint); 
             p.route.push(routePoint);
         });
+
+        if(d.hasBall) toggleBallForPlayer(p);
     }); 
 
-    storeOriginalPositions();
     redrawAllRoutes(); 
+}
+
+function toggleBallForPlayer(player){
+    if(player.hasBall) return;
+    const ball=document.createElement("div"); 
+    ball.classList.add("ball"); 
+    ball.style.left=player.style.left; 
+    ball.style.top=player.style.top; 
+    field.appendChild(ball); 
+    player.hasBall=true; 
+    player.ballEl=ball;
+}
+
+function selectPlayerAndToggleBall(p){
+    selectPlayer(p);
+    toggleBallForPlayer(p);
 }
 
 function updatePlayDropdown(){ 
@@ -350,9 +378,23 @@ function deletePlay(){
     updatePlayDropdown(); 
 }
 
+function resetPlay(){ 
+    players.forEach(p=>{
+        if(p.dotEl) p.dotEl.remove();
+        if(p.ballEl) p.ballEl.remove();
+        p.remove();
+    });
+    players=[]; 
+    const existingDots=document.querySelectorAll('.route-dot'); existingDots.forEach(d=>d.remove());
+    const existingBalls=document.querySelectorAll('.ball'); existingBalls.forEach(b=>b.remove());
+    redrawAllRoutes(); 
+    selectedPlayer=null;
+}
+
 function deleteSelectedPlayer(){ 
     if(selectedPlayer){ 
         selectedPlayer.route.forEach(pt=>{ if(pt.dotEl) pt.dotEl.remove(); });
+        if(selectedPlayer.ballEl) selectedPlayer.ballEl.remove();
         selectedPlayer.remove(); 
         players=players.filter(p=>p!==selectedPlayer); 
         selectedPlayer=null; 
@@ -371,6 +413,33 @@ function toggleBall(){
         selectedPlayer.hasBall=true; 
         selectedPlayer.ballEl=ball; 
     } 
+}
+
+// --- Animation ---
+function startAnimation(){
+    if(players.length===0) return;
+    const startPositions = players.map(p=>({x:parseFloat(p.style.left), y:parseFloat(p.style.top)}));
+    const routes = players.map(p=>p.route.map(r=>({x:r.x,y:r.y})));
+    const duration=3000; 
+    const startTime=performance.now();
+
+    function animate(now){
+        const t=Math.min(1,(now-startTime)/duration);
+        players.forEach((p,i)=>{
+            if(routes[i].length>0){
+                const end=routes[i][routes[i].length-1];
+                p.style.left=startPositions[i].x+(end.x-startPositions[i].x)*t+"px";
+                p.style.top=startPositions[i].y+(end.y-startPositions[i].y)*t+"px";
+                if(p.hasBall) {
+                    p.ballEl.style.left=p.style.left;
+                    p.ballEl.style.top=p.style.top;
+                }
+            }
+        });
+        redrawAllRoutes();
+        if(t<1) requestAnimationFrame(animate);
+    }
+    requestAnimationFrame(animate);
 }
 
 // --- EXPORT PDF ---
@@ -421,12 +490,41 @@ async function exportPDF(){
         sel.value = prevSel;
         loadPlay();
     } else {
-        players.forEach(p=>p.remove()); players=[];
-        const existingDots=document.querySelectorAll('.route-dot'); existingDots.forEach(d=>d.remove());
-        redrawAllRoutes();
+        resetPlay();
     }
 
     pdf.save("lacrosse_plays.pdf");
+}
+
+// --- Download/Load JSON ---
+function downloadPlays(){
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(plays));
+    const dlAnchor = document.createElement('a');
+    dlAnchor.setAttribute("href", dataStr);
+    dlAnchor.setAttribute("download", "lacrosse_plays.json");
+    dlAnchor.click();
+}
+
+function loadPlaysFromFile(){
+    const fileInput = document.getElementById('playFileInput');
+    fileInput.click();
+    fileInput.onchange = () => {
+        const file = fileInput.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = e => {
+            try {
+                const importedPlays = JSON.parse(e.target.result);
+                Object.assign(plays, importedPlays);
+                localStorage.setItem('lacrossePlays', JSON.stringify(plays));
+                updatePlayDropdown();
+                alert("Plays loaded successfully!");
+            } catch(err) {
+                alert("Error loading file: " + err);
+            }
+        };
+        reader.readAsText(file);
+    };
 }
 
 // --- Field Mode ---
@@ -441,73 +539,6 @@ function toggleFieldMode(){
     } 
     drawFieldLines(); 
     redrawAllRoutes(); 
-}
-
-// --- Store original positions ---
-function storeOriginalPositions() {
-    players.forEach(p => {
-        p.originalLeft = parseFloat(p.style.left);
-        p.originalTop = parseFloat(p.style.top);
-        p.route.forEach(pt => {
-            pt.originalX = pt.x;
-            pt.originalY = pt.y;
-        });
-    });
-}
-
-// --- Reset Play ---
-function resetPlay(){ 
-    if(players.length === 0) return; 
-    players.forEach(p=>{
-        p.style.left = p.originalLeft + "px";
-        p.style.top = p.originalTop + "px";
-        p.route.forEach(pt=>{
-            if(pt.dotEl){
-                pt.x = pt.originalX;
-                pt.y = pt.originalY;
-                pt.dotEl.style.left = pt.x + "px";
-                pt.dotEl.style.top = pt.y + "px";
-            }
-        });
-    });
-    redrawAllRoutes(); 
-}
-
-// --- Animation ---
-function startAnimation(){
-    if(players.length === 0) return;
-    const duration = 3000; // 3 seconds
-    const startTime = performance.now();
-
-    const initialPositions = players.map(p=>{
-        return {
-            player: p,
-            startX: parseFloat(p.style.left),
-            startY: parseFloat(p.style.top),
-            routes: p.route.map(pt=>({x: pt.x, y: pt.y}))
-        };
-    });
-
-    function animate(now){
-        const t = Math.min(1, (now - startTime)/duration);
-        players.forEach((p, i)=>{
-            let pos = {x: initialPositions[i].startX, y: initialPositions[i].startY};
-            if(p.route.length > 0){
-                const last = p.route[p.route.length - 1];
-                pos.x = initialPositions[i].startX + t*(last.x - initialPositions[i].startX);
-                pos.y = initialPositions[i].startY + t*(last.y - initialPositions[i].startY);
-            }
-            p.style.left = pos.x + "px";
-            p.style.top = pos.y + "px";
-            if(p.hasBall && p.ballEl){
-                p.ballEl.style.left = pos.x + "px";
-                p.ballEl.style.top = pos.y + "px";
-            }
-        });
-        redrawAllRoutes();
-        if(t < 1) requestAnimationFrame(animate);
-    }
-    requestAnimationFrame(animate);
 }
 
 // --- Init ---
